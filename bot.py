@@ -37,6 +37,32 @@ def save_plan_to_history(plan: str, target_file: str) -> None:
         pass
 
 
+def parse_multi_file_output(raw: str, primary_target: str) -> Dict[str, str]:
+    """Extract multiple files from LLM output. Format: # FILE: path\\n[content]"""
+    result = {}
+    marker = "# FILE:"
+    idx = 0
+    while True:
+        idx = raw.find(marker, idx)
+        if idx < 0:
+            break
+        rest = raw[idx + len(marker):].lstrip()
+        path = rest.split("\n")[0].strip().rstrip("#").strip()
+        if not path.endswith(".py"):
+            idx += len(marker)
+            continue
+        next_idx = raw.find(marker, idx + len(marker))
+        if next_idx > 0:
+            block = raw[idx:next_idx]
+        else:
+            block = raw[idx:]
+        content = block.split("\n", 1)[-1].strip()
+        if content and not content.startswith("# FILE:"):
+            result[path] = content
+        idx = next_idx if next_idx > 0 else len(raw)
+    return result if result else {primary_target: raw}
+
+
 def apply_targeted_fix(original_code, llm_response):
     """Parses SEARCH/REPLACE blocks and applies them to the original code."""
     if "SEARCH" not in llm_response or "REPLACE" not in llm_response:
@@ -108,6 +134,7 @@ def main():
     current_working_code = sources.get(target_file, "")
     original_code = sources.get(target_file, "")
     target_path = os.path.join(root_dir, target_file)
+    extra_files_written = []
 
     while current_attempt < max_attempts:
         current_attempt += 1
@@ -122,12 +149,16 @@ def main():
 
         try:
             if current_attempt == 1:
-                # First attempt: full generation
-                new_code = llm.get_code_edits(
+                # First attempt: full generation (multi-file when creating new modules)
+                raw = llm.get_code_edits(
                     f"Implement the plan: {plan}. Return the FULL CONTENT for {target_file}. "
-                    "Output MUST pass black and flake8 (E9,F). No syntax errors.",
+                    "If the plan creates a NEW module, output BOTH the new module AND updated bot.py. "
+                    "Format each file as: # FILE: filename.py\\n[full file content] "
+                    "bot.py MUST import and call the new module. Output MUST pass black and flake8 (E9,F). No syntax errors.",
                     current_working_code,
                 )
+                files_to_write = parse_multi_file_output(raw, target_file)
+                new_code = files_to_write.get(target_file, raw)
             else:
                 # Repair attempts: targeted fixes
                 model_type = "cloud" if is_cloud_attempt else "local"
@@ -142,11 +173,27 @@ def main():
                         current_working_code,
                     )
 
-            # 4. Evolution: write to real file so black/flake8 can format and check it
-            with open(target_path, "w", encoding="utf-8") as f:
-                f.write(new_code)
+            # 4. Evolution: write file(s), validate
+            if current_attempt == 1 and len(files_to_write) > 1:
+                extra_files_written = [f for f in files_to_write if f != target_file]
+                for fn, content in files_to_write.items():
+                    p = os.path.join(root_dir, fn)
+                    with open(p, "w", encoding="utf-8") as f:
+                        f.write(content)
+                all_ok = True
+                all_errs = []
+                for fn in files_to_write:
+                    ok, err = Builder.validate(cwd=root_dir, target_file=fn)
+                    if not ok:
+                        all_ok = False
+                        all_errs.append(f"--- {fn} ---\n{err}")
+                success = all_ok
+                errors = "\n".join(all_errs) if all_errs else ""
+            else:
+                with open(target_path, "w", encoding="utf-8") as f:
+                    f.write(new_code)
+                success, errors = Builder.validate(cwd=root_dir, target_file=target_file)
 
-            success, errors = Builder.validate(cwd=root_dir, target_file=target_file)
             if success:
                 print(f"Evolution of {target_file} successful.")
                 break
@@ -159,6 +206,10 @@ def main():
                     print("All repair attempts (local and cloud) failed.")
                     with open(target_path, "w", encoding="utf-8") as f:
                         f.write(original_code)
+                    for fn in extra_files_written:
+                        p = os.path.join(root_dir, fn)
+                        if os.path.exists(p):
+                            os.remove(p)
 
         except Exception as e:
             print(f"Evolution error: {e}")
