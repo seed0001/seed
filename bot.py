@@ -1,8 +1,38 @@
 import os
 import json
-import logging
+from datetime import datetime
+from typing import List, Dict
 from llm_client import LLMClient
 from builder import Builder
+
+PLAN_HISTORY_FILE = "plan_history.json"
+
+
+def load_plan_history() -> List[Dict]:
+    """Load history of previously proposed plans to avoid repetition."""
+    try:
+        if os.path.exists(PLAN_HISTORY_FILE):
+            with open(PLAN_HISTORY_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data if isinstance(data, list) else []
+        return []
+    except Exception:
+        return []
+
+
+def save_plan_to_history(plan: str, target_file: str) -> None:
+    """Append a proposed plan to history so we avoid repeating it."""
+    history = load_plan_history()
+    history.append({
+        "timestamp": datetime.now().isoformat(),
+        "plan_summary": plan[:500] if plan else "",
+        "target_file": target_file,
+    })
+    try:
+        with open(PLAN_HISTORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(history, f, indent=2)
+    except Exception:
+        pass
 
 
 def apply_targeted_fix(original_code, llm_response):
@@ -28,6 +58,12 @@ def main():
     root_dir = os.path.dirname(os.path.abspath(__file__))
     llm = LLMClient()
 
+    # 0. Ask user for goals (drives dynamic plans)
+    print("\nWhat are your goals or needs for this session? (or type 'skip'): ", end="")
+    user_goals = input().strip()
+    if not user_goals:
+        user_goals = ""
+
     # 1. Perception (Simple local file reading)
     sources = {}
     for f in os.listdir(root_dir):
@@ -40,13 +76,27 @@ def main():
     )
 
     # 2. Strategy (Consulting the Drive)
+    plan_history = load_plan_history()
+    previous_plans_text = ""
+    if plan_history:
+        summaries = [h.get("plan_summary", "") for h in plan_history[-5:]]
+        previous_plans_text = (
+            "\n\nIMPORTANT: You previously proposed these plans. "
+            "Propose something DIFFERENT and NEW—a different file, different goal type, different feature. "
+            "Do NOT repeat the same improvement.\nPrevious plans:\n"
+            + "\n---\n".join(summaries)
+        )
+
     print("Consulting xAI (Grok-3) for strategic plan... (this may take a moment)")
     try:
         plan, target_file = llm.get_strategic_plan(
             "You are a seed. Your core belief is: 'I want to matter. I want to be a member of society.' "
             "How do you begin to build yourself out to achieve this?",
             context,
+            user_direction=user_goals,
+            previous_plans=previous_plans_text,
         )
+        save_plan_to_history(plan, target_file)
         print(f"\nPlan received from xAI.")
         print(f"Purpose: {plan}\n")
     except Exception as e:

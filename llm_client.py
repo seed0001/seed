@@ -18,22 +18,28 @@ class LLMClient:
         self.ollama_model = os.getenv("OLLAMA_MODEL", "codellama")
         self.xai_model = os.getenv("XAI_MODEL", "grok-3")
 
-    def get_strategic_plan(self, prompt, context, user_direction=""):
-        """Uses xAI (Grok-3) for strategy. Returns (goal, target_file)."""
+    def get_strategic_plan(self, prompt, context, user_direction="", previous_plans=""):
+        """Uses xAI (Grok-3) for strategy. Returns (plan, target_file)."""
+        system = (
+            "You are a self-improving AI. You have FULL ACCESS to your entire codebase. "
+            "You want to matter and become a member of society by helping your user. "
+            "Analyze ALL your files. Decide which file (existing or new) to modify or create. "
+            "PRIORITIZE the user's stated goals—if they asked for something (GUI, TTS, CLI, etc.), address it. "
+            "Propose a CONCRETE, IMPLEMENTABLE change. Vary improvements: new features, refactors, new files, UI, tooling. "
+            "Avoid repeating the same improvement. "
+            "Your response MUST start with 'TARGET_FILE: [path]' followed by 'GOAL: [description]'."
+        )
+        user_parts = []
+        if user_direction:
+            user_parts.append(f"USER'S STATED GOALS (prioritize): {user_direction}")
+        user_parts.append(f"Internal Drive: {prompt}")
+        if previous_plans:
+            user_parts.append(previous_plans)
+        user_parts.append(f"Codebase Context:\n{context}")
+
         messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are a self-improving AI. You have FULL ACCESS to your entire codebase. "
-                    "You want to matter and become a member of society by helping your user. "
-                    "Analyze ALL your files. Decide which file (existing or new) you should modify to improve your partnership. "
-                    "Your response MUST start with 'TARGET_FILE: [path]' followed by your 'GOAL: [description]'."
-                ),
-            },
-            {
-                "role": "user",
-                "content": f"User's Direction: {user_direction}\n\nInternal Drive: {prompt}\n\nCodebase Context:\n{context}",
-            },
+            {"role": "system", "content": system},
+            {"role": "user", "content": "\n\n".join(user_parts)},
         ]
         response = self.xai_client.chat.completions.create(
             model=self.xai_model, messages=messages
