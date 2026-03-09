@@ -41,9 +41,14 @@ def main():
     current_attempt = 0
     feedback = ""
 
-    while current_attempt < max_attempts:
+    while current_attempt < max_attempts + 1:
         current_attempt += 1
-        print(f"Evolution attempt {current_attempt}/{max_attempts}...")
+        is_cloud_attempt = current_attempt > max_attempts
+        
+        if is_cloud_attempt:
+            print(f"Final Fail-Safe: Consulting Cloud Model (Grok-3) for repair...")
+        else:
+            print(f"Evolution attempt {current_attempt}/{max_attempts} (Local)...")
 
         try:
             current_code = sources.get(target_file, "")
@@ -51,7 +56,10 @@ def main():
             if feedback:
                 instruction = f"Your previous attempt for {target_file} failed with these errors:\n{feedback}\n\nPlease fix these errors and return the FULL CONTENT."
 
-            new_code = llm.get_code_edits(instruction, current_code)
+            if is_cloud_attempt:
+                new_code = llm.get_code_edits_cloud(instruction, current_code)
+            else:
+                new_code = llm.get_code_edits(instruction, current_code)
 
             # 4. Evolution
             tmp_path = os.path.join(root_dir, f"{target_file}.tmp")
@@ -61,18 +69,25 @@ def main():
             success, errors = Builder.validate()
             if success:
                 print(f"Evolution of {target_file} successful.")
-                with open(os.path.join(root_dir, target_file), "w", encoding="utf-8") as f:
+                with open(
+                    os.path.join(root_dir, target_file), "w", encoding="utf-8"
+                ) as f:
                     f.write(new_code)
                 if os.path.exists(tmp_path):
                     os.remove(tmp_path)
                 break
             else:
-                print(f"Evolution failed validation on attempt {current_attempt}.")
+                if is_cloud_attempt:
+                    print("Final cloud attempt failed.")
+                else:
+                    print(f"Evolution failed validation on attempt {current_attempt}.")
+                
                 feedback = errors
                 if os.path.exists(tmp_path):
                     os.remove(tmp_path)
-                if current_attempt == max_attempts:
-                    print("All repair attempts failed.")
+                
+                if current_attempt == max_attempts + 1:
+                    print("All repair attempts (local and cloud) failed.")
 
         except Exception as e:
             print(f"Evolution error: {e}")

@@ -11,7 +11,9 @@ class Builder:
 
         # 1. Auto-format with black
         try:
-            subprocess.run([sys.executable, "-m", "black", "."], check=True, capture_output=True)
+            subprocess.run(
+                [sys.executable, "-m", "black", "."], check=True, capture_output=True
+            )
             print("Auto-formatting (black) completed.")
         except subprocess.CalledProcessError as e:
             errors += f"Black error: {e.stderr.decode()}\n"
@@ -29,7 +31,7 @@ class Builder:
                     ".",
                 ],
                 check=True,
-                capture_output=True
+                capture_output=True,
             )
             print("Structural linting passed.")
         except subprocess.CalledProcessError as e:

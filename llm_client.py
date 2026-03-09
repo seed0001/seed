@@ -76,3 +76,21 @@ class LLMClient:
         )
         raw_code = response.choices[0].message.content
         return self._clean_code(raw_code)
+
+    def get_code_edits_cloud(self, prompt, source_code, user_direction=""):
+        """Uses xAI (Grok-3) for a final, high-intelligence fail-safe repair attempt."""
+        messages = [
+            {
+                "role": "system",
+                "content": "You are a master architect AI. Provide ONLY the full, updated source code. Fix any errors or missing logic mentioned. Output ONLY raw code, no markdown.",
+            },
+            {
+                "role": "user",
+                "content": f"User's Direction: {user_direction}\n\nTask: {prompt}\n\nSource Code:\n{source_code}",
+            },
+        ]
+        response = self.xai_client.chat.completions.create(
+            model=self.xai_model, messages=messages
+        )
+        raw_code = response.choices[0].message.content
+        return self._clean_code(raw_code)
