@@ -118,12 +118,10 @@ class LLMClient:
                 "content": f"Error: {error_msg}\n\nSource Code:\n{source_code}",
             },
         ]
-        
+
         client = self.ollama_client if model_type == "local" else self.xai_client
         model = self.ollama_model if model_type == "local" else self.xai_model
-        
-        response = client.chat.completions.create(
-            model=model, messages=messages
-        )
+
+        response = client.chat.completions.create(model=model, messages=messages)
         content = response.choices[0].message.content
         return content
