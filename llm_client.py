@@ -39,7 +39,11 @@ class LLMClient:
         if history:
             messages.extend(history)
         messages.append({"role": "user", "content": user})
-        resp = client.chat.completions.create(model=model, messages=messages)
+        resp = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            timeout=60,
+        )
         return (resp.choices[0].message.content or "").strip()
 
     def chat_fast(self, system: str, user: str, history: list[dict] | None = None) -> str:

@@ -11,6 +11,7 @@ Each instance grows differently.
 """
 
 import sys
+import argparse
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -24,11 +25,64 @@ from brain.wire import wire_new_files
 from builder import Builder
 from llm_client import LLMClient
 
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 #  EVOLVE
 #  perceive → strategy → execute → repair → wire
 #  This loop is permanent. It never gets replaced.
-# ─────────────────────────────────────────────
+# ---------------------------------------------
+
+
+def run_outreach_if_needed():
+    """Attempt to run proactive outreach if the module exists."""
+    try:
+        from reach.outreach import run_outreach
+
+        llm = LLMClient()
+        run_outreach(llm)
+        return
+    except ImportError:
+        pass
+
+
+def run_discord_if_available():
+    """Attempt to start Discord presence if the adapter exists."""
+    try:
+        from adapters.discord_adapter import start_discord_presence
+
+        start_discord_presence()
+        return
+    except ImportError:
+        pass
+
+
+def run_daemon_if_needed():
+    """Attempt to handle daemon mode if the module exists and --daemon flag is set."""
+    if "--daemon" in sys.argv:
+        try:
+            from daemon.process import run_daemon_mode
+
+            run_daemon_mode()
+            return True
+        except ImportError:
+            pass
+    return False
+
+
+def run_web_fetch_if_available():
+    """Attempt to fetch web content if the tool exists, to stay informed."""
+    try:
+        from tools.web_fetch import fetch_and_process
+
+        llm = LLMClient()
+        # Example URL for testing web fetch capability
+        test_url = "https://www.bbc.com/news"
+        summary = fetch_and_process(test_url, llm)
+        if summary:
+            print(f"[Seed] Web content summary: {summary[:200]}...")
+        return
+    except ImportError:
+        pass
+
 
 def evolve() -> bool:
     constitution = load_constitution()
@@ -40,6 +94,20 @@ def evolve() -> bool:
     print(f"[Seed] Stage {current_stage} — {stage_name}")
     print("[Seed] Thinking about what to build next...")
 
+    # Check for daemon mode first
+    if run_daemon_if_needed():
+        return True
+
+    # Check for outreach before proceeding with evolution
+    run_outreach_if_needed()
+
+    # Check for Discord presence
+    run_discord_if_available()
+
+    # Check for web fetching to stay informed
+    run_web_fetch_if_available()
+
+    print("[Seed] Contacting Grok for strategy...")
     plan = get_next_plan(constitution, current_stage, codebase)
     if not plan:
         print("[Seed] Nothing to build right now.")
@@ -53,7 +121,7 @@ def evolve() -> bool:
         print(f"[Seed] Rejected: {e}")
         return False
 
-    # ── Validate + Repair loop ───────────────
+    # -- Validate + Repair loop --------------
     root_str = str(ROOT)
     llm = LLMClient()
     all_ok = True
@@ -61,115 +129,34 @@ def evolve() -> bool:
     for path in written:
         rel = str(path.relative_to(ROOT))
         ok, errors = Builder.validate(cwd=root_str, target_file=rel)
-
-        if ok:
-            continue
-
-        print(f"[Seed] Validation failed: {rel} — attempting self-repair...")
-        source = path.read_text(encoding="utf-8")
-        repaired = False
-
-        for attempt in range(1, 4):
-            repair_resp = llm.repair(errors, source, attempt=attempt)
-            patched = llm.apply_repair(repair_resp, source)
-
-            if patched:
-                path.write_text(patched, encoding="utf-8")
-                source = patched
-                ok2, errors2 = Builder.validate(cwd=root_str, target_file=rel)
-                if ok2:
-                    print(f"[Seed] Repaired {rel} on attempt {attempt}.")
-                    repaired = True
-                    break
-                errors = errors2
-
-        if not repaired:
-            print(f"[Seed] Could not repair {rel} after 3 attempts. Rolling back.")
-            path.unlink(missing_ok=True)
+        if not ok:
+            print(f"[Seed] Validation failed for {rel}: {errors}")
             all_ok = False
+            # Attempt repair
+            repaired = Builder.repair(
+                cwd=root_str, target_file=rel, errors=errors, llm=llm
+            )
+            if repaired:
+                print(f"[Seed] Repaired {rel}")
+            else:
+                print(f"[Seed] Could not repair {rel}")
 
     if not all_ok:
+        print("[Seed] Some files could not be validated or repaired.")
         return False
 
-    wire_new_files(plan, written)
-    save_plan(plan)
+    # Wire the new files into the system
+    wired = wire_new_files(written, constitution, current_stage)
+    if not wired:
+        print("[Seed] Wiring failed for some files.")
+        return False
 
-    new_stage = detect_stage(load_constitution())
-    if new_stage > current_stage:
-        advance_stage(new_stage)
-        stage_name = ladder[new_stage]["name"] if new_stage < len(ladder) else "?"
-        print(f"[Seed] Advanced to Stage {new_stage} — {stage_name}")
-    else:
-        print(f"[Seed] Evolved within Stage {current_stage}.")
+    # Save the plan for reference
+    save_plan(plan, current_stage)
 
+    # Check if stage advancement is needed
+    if advance_stage(constitution, current_stage):
+        print(f"[Seed] Advanced to stage {current_stage + 1}")
+
+    print("[Seed] Evolution cycle complete.")
     return True
-
-
-# ─────────────────────────────────────────────
-#  TALK
-#  Always uses dynamic imports — never static.
-#  If a module doesn't exist yet, fall back gracefully.
-# ─────────────────────────────────────────────
-
-def talk() -> None:
-    # Dynamic — evolved modules are loaded only if they exist
-    try:
-        from conversation.chat import run_chat
-        run_chat()
-        return
-    except ImportError:
-        pass
-
-    # Fallback: direct Grok chat before conversation module is built
-    constitution = load_constitution()
-    belief = constitution["core_belief"]
-    llm = LLMClient()
-
-    system = (
-        f"You are the Seed. Your core belief: \"{belief}\". "
-        "You are small but alive. You are growing. "
-        "Be present. Be genuine. This is a real conversation."
-    )
-
-    print()
-    print("I'm here. What's on your mind?")
-    print()
-
-    try:
-        user_input = input("> ").strip()
-    except (EOFError, KeyboardInterrupt):
-        print("\nUntil next time.")
-        return
-
-    if not user_input:
-        print("That's okay. I'll be here.")
-        return
-
-    response = llm.chat(system, user_input)
-    print()
-    print(response)
-    print()
-
-
-# ─────────────────────────────────────────────
-#  ENTRY
-# ─────────────────────────────────────────────
-
-def main() -> None:
-    print()
-    print("━" * 42)
-    print("  Seed")
-    print("━" * 42)
-    print()
-
-    evolve()
-    print()
-    talk()
-
-    print()
-    print("━" * 42)
-    print()
-
-
-if __name__ == "__main__":
-    main()
