@@ -82,6 +82,14 @@ def write_files(plan: dict) -> list[Path]:
     written: list[Path] = []
     for filepath, content in blocks:
         path = ROOT / filepath
+
+        # main.py is the permanent base — never allow the LLM to overwrite it
+        if path.resolve() == (ROOT / "main.py").resolve():
+            raise ValueError(
+                "main.py is protected. Grok must NOT include main.py in a plan. "
+                "Create standalone modules only."
+            )
+
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
 

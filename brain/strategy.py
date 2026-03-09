@@ -43,7 +43,7 @@ def get_next_plan(constitution: dict, current_stage: int, codebase_scan: dict) -
     codebase_block = format_for_prompt(codebase_scan)
     history_block = _history_summary(history)
 
-    # Always inject the full LLMClient interface so generated code calls it correctly
+    # Inject full source of every base module so Grok can't invent wrong APIs
     llm_client_src = (ROOT / "llm_client.py").read_text(encoding="utf-8")
 
     system = (
@@ -51,6 +51,38 @@ def get_next_plan(constitution: dict, current_stage: int, codebase_scan: dict) -
         "You have full access to your codebase. "
         "You output valid JSON only. No markdown, no explanation outside the JSON."
     )
+
+    # Canonical signatures for every base module Grok might reference
+    base_api_reference = """\
+=== BASE MODULE SIGNATURES (use ONLY these — do NOT invent new ones) ===
+
+# builder.py
+class Builder:
+    @staticmethod
+    def validate(cwd: str | None = None, target_file: str | None = None) -> tuple[bool, str]:
+        \"\"\"Returns (success, error_string).\"\"\"
+    @staticmethod
+    def validate_all(cwd: str | None, paths: list[str]) -> tuple[bool, str]:
+        \"\"\"Validate multiple files. Returns (all_ok, combined_errors).\"\"\"
+# NOTE: Builder has NO .repair() method.
+
+# brain/wire.py
+def wire_new_files(plan: dict, written_paths: list[Path]) -> None: ...
+
+# brain/execute.py
+def write_files(plan: dict) -> list[Path]: ...
+
+# brain/strategy.py
+def save_plan(plan: dict) -> None: ...  # ONE argument only — no current_stage
+def get_next_plan(constitution: dict, current_stage: int, codebase_scan: dict) -> dict | None: ...
+
+# soul/constitution.py
+def load_constitution() -> dict: ...
+def detect_stage(constitution: dict) -> int: ...
+def advance_stage(new_stage: int) -> None: ...  # ONE integer argument only
+def get_next_stage(constitution: dict, current: int) -> dict | None: ...
+def format_constitution_for_prompt(constitution: dict, current_stage: int) -> str: ...
+"""
 
     prompt = f"""
 {constitution_block}
@@ -63,10 +95,12 @@ Current codebase:
 
 ---
 
-CRITICAL — LLMClient interface (you MUST use these exact signatures):
+{base_api_reference}
+
+--- LLMClient full source (use ONLY these methods) ---
 {llm_client_src}
 
-Any code you write that uses LLMClient MUST call it correctly:
+LLMClient method summary:
   - llm.chat(system: str, user: str, history: list[dict] | None = None) -> str
   - llm.chat_fast(system: str, user: str, history: list[dict] | None = None) -> str
   - llm.repair(error: str, source_code: str, attempt: int = 1) -> str
@@ -88,22 +122,14 @@ Respond with ONLY this JSON object:
 }}
 
 Requirements:
-- Every file in 'files' must appear in 'implementation' with full, runnable code
-- If you create a new module, you MUST also include an updated main.py in 'files' and 'implementation'
-- No function stubs. No TODO comments. No placeholders. Every function complete.
-- CRITICAL: main.py must NEVER have a static top-level import of any module you are creating.
-  New modules must always be loaded dynamically inside try/except ImportError blocks.
-  Example of what main.py must look like when wiring in conversation/chat.py:
-    def talk():
-        try:
-            from conversation.chat import run_chat
-            run_chat()
-            return
-        except ImportError:
-            pass
-        # fallback code here
-  Static imports at the top of main.py will cause crashes when modules are absent.
-  Dynamic imports inside functions allow graceful fallback.
+- Every file in 'files' must appear in 'implementation' with full, runnable code.
+- NEVER include main.py in 'files'. main.py is protected and will never be overwritten.
+  The system automatically wires new modules into main.py. Just create the module.
+- Modules are wired dynamically via try/except ImportError. Your module MUST expose
+  a top-level function named run_<module_stem>(). Example: conversation/chat.py must
+  define run_chat(). memory/manager.py must define run_manager().
+- No function stubs. No TODO comments. No placeholders. Every function must be complete.
+- Use ONLY the base module signatures listed above. Do NOT invent new method names.
 """
 
     llm = LLMClient()
