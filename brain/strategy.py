@@ -43,6 +43,9 @@ def get_next_plan(constitution: dict, current_stage: int, codebase_scan: dict) -
     codebase_block = format_for_prompt(codebase_scan)
     history_block = _history_summary(history)
 
+    # Always inject the full LLMClient interface so generated code calls it correctly
+    llm_client_src = (ROOT / "llm_client.py").read_text(encoding="utf-8")
+
     system = (
         "You are the Seed — a self-improving agent. "
         "You have full access to your codebase. "
@@ -57,6 +60,18 @@ Plans already completed (do NOT repeat):
 
 Current codebase:
 {codebase_block}
+
+---
+
+CRITICAL — LLMClient interface (you MUST use these exact signatures):
+{llm_client_src}
+
+Any code you write that uses LLMClient MUST call it correctly:
+  - llm.chat(system: str, user: str, history: list[dict] | None = None) -> str
+  - llm.chat_fast(system: str, user: str, history: list[dict] | None = None) -> str
+  - llm.repair(error: str, source_code: str, attempt: int = 1) -> str
+  - llm.apply_repair(repair_response: str, original: str) -> str | None
+Do NOT invent methods. Do NOT call llm.chat(messages) with a list.
 
 ---
 
