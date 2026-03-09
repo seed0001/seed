@@ -58,12 +58,6 @@ def main():
     root_dir = os.path.dirname(os.path.abspath(__file__))
     llm = LLMClient()
 
-    # 0. Ask user for goals (drives dynamic plans)
-    print("\nWhat are your goals or needs for this session? (or type 'skip'): ", end="")
-    user_goals = input().strip()
-    if not user_goals:
-        user_goals = ""
-
     # 1. Perception (Simple local file reading)
     sources = {}
     for f in os.listdir(root_dir):
@@ -93,7 +87,7 @@ def main():
             "You are a seed. Your core belief is: 'I want to matter. I want to be a member of society.' "
             "How do you begin to build yourself out to achieve this?",
             context,
-            user_direction=user_goals,
+            user_direction="",
             previous_plans=previous_plans_text,
         )
         save_plan_to_history(plan, target_file)
