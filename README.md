@@ -54,18 +54,21 @@ cd seed
 pip install -r requirements.txt
 cp .env.example .env
 # Add your XAI_API_KEY to .env
-python main.py
+python daemon.py
 ```
 
 That's it. Watch it grow.
+
+Run `daemon.py`, not `main.py`. The daemon owns the Seed's lifecycle — if it crashes, the daemon captures the error, asks Grok to fix it, applies the patch, and restarts automatically.
 
 ---
 
 ## What's baked in (never replaced)
 
-- The repair loop — lives in `main.py`, 3-attempt self-fix with rollback
-- The constitution — belief, ladder, hard rules
-- The LLM client — Grok-3 strategy, Grok-3 execution, Grok-3-fast repair
+- **`daemon.py`** — process-level watchdog. Catches crashes, asks Grok to fix them, restarts.
+- **Repair loop** — lives in `main.py`, 3-attempt self-fix during evolution with rollback
+- **The constitution** — belief, ladder, hard rules
+- **The LLM client** — Grok-3 strategy, Grok-3 execution, Grok-3-fast repair
 
 Everything else the Seed builds itself.
 

@@ -2,3 +2,12 @@
 __pycache__/
 *.pyc
 storage/
+conversation/
+memory/
+personality/
+reach/
+adapters/
+daemon/
+tools/
+web/
+skills/
