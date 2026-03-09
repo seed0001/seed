@@ -5,37 +5,40 @@ import sys
 class Builder:
     @staticmethod
     def validate():
-        """Runs auto-formatting and then basic checks."""
+        """Runs auto-formatting and then basic checks. Returns (success, errors)."""
         print("Running validation...")
+        errors = ""
 
         # 1. Auto-format with black
         try:
-            subprocess.run([sys.executable, "-m", "black", "."], check=True)
+            subprocess.run([sys.executable, "-m", "black", "."], check=True, capture_output=True)
             print("Auto-formatting (black) completed.")
-        except Exception as e:
-            print(f"Black failed or not installed: {e}")
+        except subprocess.CalledProcessError as e:
+            errors += f"Black error: {e.stderr.decode()}\n"
+            print("Auto-formatting failed.")
 
-        # 2. Run flake8 but ignore stylistic complaints (E, W, F401)
-        # We focus on E9 (SyntaxError) and F (Logical errors except F401)
+        # 2. Run flake8
         try:
-            # --ignore=E,W,F401,F841
             subprocess.run(
                 [
                     sys.executable,
                     "-m",
                     "flake8",
                     "--ignore=E,W,F401,F841",
-                    "--select=E9,F",  # Only catch syntax and critical logic
+                    "--select=E9,F",
                     ".",
                 ],
                 check=True,
+                capture_output=True
             )
             print("Structural linting passed.")
-        except subprocess.CalledProcessError:
+        except subprocess.CalledProcessError as e:
+            lint_output = e.stdout.decode()
+            errors += f"Lint failures:\n{lint_output}"
             print("Structural linting failed.")
-            return False
+            return False, errors
 
-        return True
+        return True, ""
 
     @staticmethod
     def build():

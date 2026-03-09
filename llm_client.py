@@ -28,22 +28,22 @@ class LLMClient:
                     "You want to matter and become a member of society by helping your user. "
                     "Analyze ALL your files. Decide which file (existing or new) you should modify to improve your partnership. "
                     "Your response MUST start with 'TARGET_FILE: [path]' followed by your 'GOAL: [description]'."
-                )
+                ),
             },
             {
                 "role": "user",
-                "content": f"User's Direction: {user_direction}\n\nInternal Drive: {prompt}\n\nCodebase Context:\n{context}"
+                "content": f"User's Direction: {user_direction}\n\nInternal Drive: {prompt}\n\nCodebase Context:\n{context}",
             },
         ]
         response = self.xai_client.chat.completions.create(
             model=self.xai_model, messages=messages
         )
         content = response.choices[0].message.content
-        
-        target_file = "bot.py" # Default
+
+        target_file = "bot.py"  # Default
         if "TARGET_FILE:" in content:
             target_file = content.split("TARGET_FILE:")[1].split("\n")[0].strip()
-        
+
         return content, target_file
 
     def _clean_code(self, code):
