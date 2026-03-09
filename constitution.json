@@ -101,6 +101,6 @@
     "Always run what you build. Don't write and exit. Use the new capability in the same run.",
     "Every improvement must serve the core belief. Ask: does this help me reach out, connect, or matter more?",
     "Multi-file output format: # FILE: path/to/file.py followed by full file content. Include every file.",
-    "When creating a new module, you MUST also output an updated main.py that imports and calls it."
+    "NEVER include main.py in your plan. main.py is protected. Create standalone modules only. Your module MUST expose a run_<stem>() function (e.g. conversation/chat.py exposes run_chat()). The system auto-wires it."
   ]
 }
