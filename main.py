@@ -24,7 +24,6 @@ from brain.wire import wire_new_files
 from builder import Builder
 from llm_client import LLMClient
 
-
 # ─────────────────────────────────────────────
 #  EVOLVE
 #  perceive → strategy → execute → repair → wire
@@ -32,10 +31,6 @@ from llm_client import LLMClient
 # ─────────────────────────────────────────────
 
 def evolve() -> bool:
-    """
-    One evolution cycle.
-    Returns True if the Seed successfully built and wired something new.
-    """
     constitution = load_constitution()
     current_stage = detect_stage(constitution)
     codebase = scan_codebase()
@@ -52,7 +47,6 @@ def evolve() -> bool:
 
     print(f"[Seed] Building: {plan['description']}")
 
-    # ── Execute ──────────────────────────────
     try:
         written = write_files(plan)
     except (ValueError, IOError) as e:
@@ -60,7 +54,6 @@ def evolve() -> bool:
         return False
 
     # ── Validate + Repair loop ───────────────
-    # This is baked in. The Seed can always repair what it builds.
     root_str = str(ROOT)
     llm = LLMClient()
     all_ok = True
@@ -98,10 +91,7 @@ def evolve() -> bool:
     if not all_ok:
         return False
 
-    # ── Wire ─────────────────────────────────
     wire_new_files(plan, written)
-
-    # ── Record ───────────────────────────────
     save_plan(plan)
 
     new_stage = detect_stage(load_constitution())
@@ -117,17 +107,12 @@ def evolve() -> bool:
 
 # ─────────────────────────────────────────────
 #  TALK
-#  Uses conversation module if it exists.
-#  Falls back to direct Grok chat if it doesn't.
-#  This is the proactive side — the Seed reaches out.
+#  Always uses dynamic imports — never static.
+#  If a module doesn't exist yet, fall back gracefully.
 # ─────────────────────────────────────────────
 
 def talk() -> None:
-    """
-    Conversation. The Seed initiates — it does not wait.
-    If a conversation module was built, use it.
-    Otherwise: one-turn Grok chat until the module exists.
-    """
+    # Dynamic — evolved modules are loaded only if they exist
     try:
         from conversation.chat import run_chat
         run_chat()
@@ -135,7 +120,7 @@ def talk() -> None:
     except ImportError:
         pass
 
-    # Fallback: direct Grok, no module yet
+    # Fallback: direct Grok chat before conversation module is built
     constitution = load_constitution()
     belief = constitution["core_belief"]
     llm = LLMClient()

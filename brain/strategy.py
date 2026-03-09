@@ -91,6 +91,19 @@ Requirements:
 - Every file in 'files' must appear in 'implementation' with full, runnable code
 - If you create a new module, you MUST also include an updated main.py in 'files' and 'implementation'
 - No function stubs. No TODO comments. No placeholders. Every function complete.
+- CRITICAL: main.py must NEVER have a static top-level import of any module you are creating.
+  New modules must always be loaded dynamically inside try/except ImportError blocks.
+  Example of what main.py must look like when wiring in conversation/chat.py:
+    def talk():
+        try:
+            from conversation.chat import run_chat
+            run_chat()
+            return
+        except ImportError:
+            pass
+        # fallback code here
+  Static imports at the top of main.py will cause crashes when modules are absent.
+  Dynamic imports inside functions allow graceful fallback.
 """
 
     llm = LLMClient()
