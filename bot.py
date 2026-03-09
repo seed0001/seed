@@ -5,6 +5,24 @@ from llm_client import LLMClient
 from builder import Builder
 
 
+def apply_targeted_fix(original_code, llm_response):
+    """Parses SEARCH/REPLACE blocks and applies them to the original code."""
+    if "SEARCH" not in llm_response or "REPLACE" not in llm_response:
+        return None
+
+    try:
+        search_block = llm_response.split("SEARCH")[1].split("REPLACE")[0].strip()
+        replace_block = llm_response.split("REPLACE")[1].strip()
+        
+        if search_block in original_code:
+            return original_code.replace(search_block, replace_block)
+        else:
+            print(f"DEBUG: Search block not found in source.")
+            return None
+    except Exception as e:
+        print(f"Parsing error: {e}")
+        return None
+
 def main():
     print("Self-Improving Bot starting...")
     root_dir = os.path.dirname(os.path.abspath(__file__))
@@ -37,29 +55,32 @@ def main():
 
     # 3. Execution (Building the self)
     print(f"Generating implementation for {target_file}...")
-    max_attempts = 3
+    max_attempts = 4 # 3 local + 1 cloud
     current_attempt = 0
     feedback = ""
+    current_working_code = sources.get(target_file, "")
 
-    while current_attempt < max_attempts + 1:
+    while current_attempt < max_attempts:
         current_attempt += 1
-        is_cloud_attempt = current_attempt > max_attempts
+        is_cloud_attempt = current_attempt == max_attempts
         
         if is_cloud_attempt:
-            print(f"Final Fail-Safe: Consulting Cloud Model (Grok-3) for repair...")
+            print(f"Final Fail-Safe: Consulting Cloud Model (Grok-3) for targeted repair...")
         else:
-            print(f"Evolution attempt {current_attempt}/{max_attempts} (Local)...")
+            print(f"Evolution attempt {current_attempt}/{max_attempts-1} (Local)...")
 
         try:
-            current_code = sources.get(target_file, "")
-            instruction = f"Implement the plan: {plan}. Return the FULL CONTENT for {target_file}."
-            if feedback:
-                instruction = f"Your previous attempt for {target_file} failed with these errors:\n{feedback}\n\nPlease fix these errors and return the FULL CONTENT."
-
-            if is_cloud_attempt:
-                new_code = llm.get_code_edits_cloud(instruction, current_code)
+            if current_attempt == 1:
+                # First attempt: full generation
+                new_code = llm.get_code_edits(f"Implement the plan: {plan}. Return the FULL CONTENT for {target_file}.", current_working_code)
             else:
-                new_code = llm.get_code_edits(instruction, current_code)
+                # Repair attempts: targeted fixes
+                model_type = "cloud" if is_cloud_attempt else "local"
+                fix_response = llm.get_targeted_fix(feedback, current_working_code, model_type)
+                new_code = apply_targeted_fix(current_working_code, fix_response)
+                if not new_code:
+                    print("Could not apply targeted fix. Falling back to full rewrite.")
+                    new_code = llm.get_code_edits(f"Fix these errors: {feedback}. Return the FULL CONTENT.", current_working_code)
 
             # 4. Evolution
             tmp_path = os.path.join(root_dir, f"{target_file}.tmp")
@@ -69,24 +90,19 @@ def main():
             success, errors = Builder.validate()
             if success:
                 print(f"Evolution of {target_file} successful.")
-                with open(
-                    os.path.join(root_dir, target_file), "w", encoding="utf-8"
-                ) as f:
+                with open(os.path.join(root_dir, target_file), "w", encoding="utf-8") as f:
                     f.write(new_code)
                 if os.path.exists(tmp_path):
                     os.remove(tmp_path)
                 break
             else:
-                if is_cloud_attempt:
-                    print("Final cloud attempt failed.")
-                else:
-                    print(f"Evolution failed validation on attempt {current_attempt}.")
-                
+                print(f"Evolution failed validation on attempt {current_attempt}.")
                 feedback = errors
+                current_working_code = new_code # Keep the "best attempt" as base for next fix
                 if os.path.exists(tmp_path):
                     os.remove(tmp_path)
                 
-                if current_attempt == max_attempts + 1:
+                if current_attempt == max_attempts:
                     print("All repair attempts (local and cloud) failed.")
 
         except Exception as e:
