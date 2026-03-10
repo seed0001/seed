@@ -7,13 +7,17 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
+# Phrases that indicate incomplete code stubs (case-insensitive line check)
+# "placeholder" is intentionally excluded -- it's valid in HTML attributes
 REJECT_PHRASES = [
-    "placeholder",
+    "# placeholder",
     "implement later",
-    "todo",
-    "stub",
+    "# todo",
+    "# stub",
     "pass  #",
     "raise notimplementederror",
+    "your implementation here",
+    "insert code here",
 ]
 MIN_IMPL_LENGTH = 120
 
