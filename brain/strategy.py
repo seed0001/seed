@@ -125,10 +125,13 @@ Requirements:
 - Every file in 'files' must appear in 'implementation' with full, runnable code.
 - NEVER include main.py in 'files'. main.py is protected and will never be overwritten.
   The system automatically wires new modules into main.py. Just create the module.
-- Modules are wired dynamically via try/except ImportError. Your module MUST expose
-  a top-level function named run_<module_stem>(). Example: conversation/chat.py must
-  define run_chat(). memory/manager.py must define run_manager().
-- No function stubs. No TODO comments. No placeholders. Every function must be complete.
+- Your module MUST expose a top-level function named run_<module_stem>() that takes
+  ZERO arguments. main.py calls it as: run_chat(), run_manager(), etc. — no args ever.
+  The function is responsible for all its own I/O (input(), print(), etc.) internally.
+  WRONG:  def run_chat(user_input):   <-- breaks main.py
+  CORRECT: def run_chat():            <-- correct, handles input internally
+- No function stubs. No TODO comments. No incomplete implementations. Every function must
+  be complete and runnable end-to-end.
 - Use ONLY the base module signatures listed above. Do NOT invent new method names.
 """
 

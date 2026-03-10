@@ -111,6 +111,9 @@ Rules:
 - 'fix' must be the COMPLETE corrected file content, not a diff
 - No placeholders. No stubs. Full working code.
 - Never target main.py, daemon.py, builder.py, llm_client.py, or any brain/ or soul/ file
+- CRITICAL: main.py calls run_<stem>() with ZERO arguments. If the crash is a TypeError
+  about missing arguments on a run_* function, fix the evolved module to take no args.
+  Example: change def run_chat(user_input): to def run_chat(): and handle input() inside.
 """
 
         raw = llm.chat(system, prompt)
