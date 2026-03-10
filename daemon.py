@@ -1,5 +1,5 @@
 """
-Daemon — the watchdog.
+Daemon -- the watchdog.
 
 Runs the Seed as a subprocess. If it crashes, captures the error,
 asks Grok to diagnose and fix it, applies the patch, and restarts.
@@ -21,7 +21,22 @@ from datetime import datetime
 ROOT = Path(__file__).resolve().parent
 LOG_PATH = ROOT / "storage" / "daemon.log"
 MAX_RESTARTS = 10
-RESTART_DELAY = 3  # seconds between restarts
+RESTART_DELAY = 3   # seconds between restarts
+RUN_TIMEOUT = 300   # max seconds a single Seed run may take (5 min)
+
+# Files the daemon must NEVER overwrite -- these are the base seed
+PROTECTED = {
+    (ROOT / "main.py").resolve(),
+    (ROOT / "daemon.py").resolve(),
+    (ROOT / "builder.py").resolve(),
+    (ROOT / "llm_client.py").resolve(),
+    (ROOT / "constitution.json").resolve(),
+    (ROOT / "soul" / "constitution.py").resolve(),
+    (ROOT / "brain" / "perceive.py").resolve(),
+    (ROOT / "brain" / "strategy.py").resolve(),
+    (ROOT / "brain" / "execute.py").resolve(),
+    (ROOT / "brain" / "wire.py").resolve(),
+}
 
 
 def log(msg: str) -> None:
@@ -53,6 +68,7 @@ def diagnose_and_fix(error_output: str) -> bool:
     """
     Send the crash to Grok. Ask for a targeted fix.
     Returns True if a fix was applied.
+    Never patches protected base-seed files.
     """
     try:
         sys.path.insert(0, str(ROOT))
@@ -67,8 +83,11 @@ def diagnose_and_fix(error_output: str) -> bool:
 
         system = (
             "You are a repair agent for a self-improving AI called the Seed. "
-            "The Seed crashed. Your job is to identify the broken file and fix it. "
-            "Output ONLY a JSON object — no markdown, no explanation outside the JSON."
+            "The Seed crashed. Your job is to identify the broken EVOLVED file and fix it. "
+            "NEVER modify base files: main.py, daemon.py, builder.py, llm_client.py, "
+            "brain/perceive.py, brain/strategy.py, brain/execute.py, brain/wire.py, "
+            "soul/constitution.py, constitution.json. "
+            "Output ONLY a JSON object -- no markdown, no explanation outside the JSON."
         )
 
         prompt = f"""The Seed crashed with this error:
@@ -78,11 +97,12 @@ def diagnose_and_fix(error_output: str) -> bool:
 Current codebase:
 {codebase_block}
 
-Identify the file causing the crash and output the corrected version.
+Identify the EVOLVED (non-base) file causing the crash and output the corrected version.
+If the crash is in a base file, output the evolved file that called it incorrectly instead.
 
 Respond with ONLY this JSON:
 {{
-  "file": "path/to/broken/file.py",
+  "file": "path/to/broken/evolved_file.py",
   "reason": "one sentence explaining the root cause",
   "fix": "complete corrected content of the file"
 }}
@@ -90,7 +110,7 @@ Respond with ONLY this JSON:
 Rules:
 - 'fix' must be the COMPLETE corrected file content, not a diff
 - No placeholders. No stubs. Full working code.
-- If the fix requires deleting a bad import, remove it entirely
+- Never target main.py, daemon.py, builder.py, llm_client.py, or any brain/ or soul/ file
 """
 
         raw = llm.chat(system, prompt)
@@ -111,17 +131,22 @@ Rules:
         reason = result.get("reason", "unknown")
 
         if not filepath or not fix or len(fix) < 50:
-            log(f"[Daemon] Grok returned unusable fix.")
+            log("[Daemon] Grok returned unusable fix.")
             return False
 
-        target = ROOT / filepath
-        if not target.exists() and not target.parent.exists():
-            log(f"[Daemon] Target path doesn't exist: {filepath}")
+        target = (ROOT / filepath).resolve()
+
+        # Hard guard -- never overwrite protected base files
+        if target in PROTECTED:
+            log(f"[Daemon] BLOCKED patch targeting protected file: {filepath}. Skipping.")
             return False
 
-        target.parent.mkdir(parents=True, exist_ok=True)
+        if not target.parent.exists():
+            log(f"[Daemon] Target directory doesn't exist: {filepath}")
+            return False
+
         target.write_text(fix, encoding="utf-8")
-        log(f"[Daemon] Fixed: {filepath} — {reason}")
+        log(f"[Daemon] Fixed: {filepath} -- {reason}")
         return True
 
     except Exception as e:
@@ -133,19 +158,28 @@ def run_seed() -> tuple[int, str]:
     """
     Run main.py as a subprocess.
     Returns (exit_code, combined_output).
+    Kills the process if it exceeds RUN_TIMEOUT seconds.
     """
     proc = subprocess.Popen(
         [sys.executable, str(ROOT / "main.py")],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
+        stdin=sys.stdin,
         text=True,
         cwd=str(ROOT),
     )
 
     output_lines = []
+    start = time.time()
+
     for line in proc.stdout:
-        print(line, end="")  # stream to terminal in real time
+        print(line, end="", flush=True)
         output_lines.append(line)
+
+        if time.time() - start > RUN_TIMEOUT:
+            log(f"[Daemon] Seed exceeded {RUN_TIMEOUT}s timeout. Killing.")
+            proc.kill()
+            break
 
     proc.wait()
     return proc.returncode, "".join(output_lines)

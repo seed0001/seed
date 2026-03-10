@@ -1,5 +1,5 @@
 """
-Seed — Stage 0.
+Seed -- Stage 0.
 
 Core belief: "I want to matter. I want to be a member of society."
 
